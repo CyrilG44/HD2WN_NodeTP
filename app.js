@@ -1,13 +1,36 @@
-//import
+//import express
 const express = require('express');
+//import uuid version 4
+const {v4: uuidv4} = require('uuid');
 
 //instantiation
 const app = express();
 //pour autoriser de recevoir du json en post
 app.use(express.json()); 
 
+//======================BDD=========================//
+//import mongoose
+const mongoose = require('mongoose');
+
+//ecouter le succès de connexion
+mongoose.connection.once('open', () => console.log("<<Connecté à la base de données>>"))
+
+//ecouter l'échec de connexion
+mongoose.connection.on('error', (err) => console.log(`Erreur base de données : ${err}`))
+
+//Se connecter à mongoDB
+mongoose.connect("mongodb://localhost:27017/db_tp_articles");
+
+//Déclarer le modèle Person
+// 1. nom pour les relations dans le code js (pas utilisé pour le moment)
+// 2. les attributs attendus pour ce modèle
+// 3. le nom de la collection en base liée (synonyme de table en sql)
+const Article=mongoose.model('Article', {uid: String, title: String, content: String, author: String}, 'articles') 
+
+//================================================//
+
 //démarrage
-app.listen(3000, () => console.log('<<Démarrage>>'));
+app.listen(3000, () => console.log('<<Démarrage serveur node>>'));
 
 // Simulation de données en mémoire
 let articles = [
@@ -21,57 +44,58 @@ let articles = [
 const routes = require('./routes'); //sans extension
 routes.run(app);
 */ /* sinon + simplement */
-app.get('/articles',(request,response) => {
-    response.json(articles);
+app.get('/articles',async (request,response) => {
+    const allArticles = await Article.find();
+    response.json(allArticles);
 });
 
-app.get('/article/:id',(request,response) => {
-    const id=parseInt(request.params.id);
-    const article = articles.find(a => a.id===id); //triple égalité pour une égalité de valeur et type d'où le parseInt
-    if (article!=undefined) {
-        response.json(article);
-    } else {
-        response.json({message: 'article introuvable'});
+app.get('/article/:id',async (request,response) => {
+    const idParam=request.params.id;
+    const article = await Article.findOne({uid : idParam});
+    if (article) {
+        return response.json(article);
     }
+    return response.json({message: 'article introuvable'});
 });
 
-app.post('/save-article',(request,response) => {
+app.post('/save-article',async (request,response) => {
     const articleJSON = request.body;
-    
-    //si pas d'id alors on ne va pas plus loin
-    if (articleJSON.id==undefined) {
-        return response.json({message: 'id introuvable'});
+
+    let articleObject = null;
+
+    //si id alors on est en édition
+    if (articleJSON.uid) {
+        articleObject = await Article.findOne({uid : articleJSON.uid});//on essaie de retrouver l'article existant
+        //si pas d'article correspondant en bdd
+        if(!articleObject){
+            return response.json({message: `article(uid=${articleJSON.uid} introuvable`});
+        }
+        ///sinon par défaut
+        articleObject.title=articleJSON.title;
+        articleObject.content = articleJSON.content;
+        articleObject.author = articleJSON.author;
+        await articleObject.save(); //maj en bdd
+        return response.json(`L'article id=${articleObject.uid} a été mis à jour avec succès`); //return pour arrêter la fonction
     }
 
-    //sinon par défaut
-    let articleFinal = null;
-    articleFinal = articles.find(a => a.id===articleJSON.id); //find donne l'adresse mémoire
-
-    if(articleFinal){ //si article final existe alors je maj
-        articleFinal.title=articleJSON.title;
-        articleFinal.content = articleJSON.content;
-        articleFinal.author = articleJSON.author;
-        //pas besoin de maj le contenu de la liste car déjà fait (maj par ref)
-        return response.json(`L'article id=${articleFinal.id} a été mis à jour avec succès`); //return pour arrêter la fonction
-    }
-
-    //sinon par défaut = cas création [méthode guard clauses afin d'éviter les else]
-    articleFinal={};
-    articleFinal.id = articleJSON.id;
-    articleFinal.title=articleJSON.title;
-    articleFinal.content = articleJSON.content;
-    articleFinal.author = articleJSON.author;
-    articles.push(articleFinal);
-    return response.json(`L'article id=${articleFinal.id} a été créé avec succès`);
+    //sinon par défaut = cas création [méthode guard clauses en mettant des return dans les if afin d'éviter les else]
+    articleJSON.uid = uuidv4();
+    articleObject = await Article.create(articleJSON); //si articleJSON avait d'autres attributs ils ne seraient pas ajoutés en bdd grâce au model Article -> heureusement
+    return response.json(`L'article id=${articleObject.uid} a été créé avec succès`);
 
 });
 
-app.delete('/article/:id',(request,response) => {
-    const id = parseInt(request.params.id);
-    const index = articles.findIndex(a => a.id===id); //renvoie -1 si pas trouvé
-    if (index<0) {
-        return  response.json({message: 'article introuvable'});
-    } 
-    articles.splice(index,1);
-    response.json({message: `article ${id} supprimé avec succès`});
+app.delete('/article/:id', async (request,response) => {
+    //recuperer l'id
+    const idParam = request.params.id;
+    //voir si l'article existe
+    articleObject = await Article.findOne({uid : idParam});
+    //s'il n'existe pas alors message
+    if(!articleObject){
+        return  response.json({message: `article id=${idParam} introuvable`});
+    }
+    //sinon par défaut
+    await articleObject.deleteOne();
+    return response.json({message: `article id=${idParam} supprimé avec succès`});
+
 });
