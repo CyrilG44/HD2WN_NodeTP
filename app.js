@@ -78,7 +78,7 @@ app.post('/save-article',async (request,response) => {
         return response.json(`L'article id=${articleObject.uid} a été mis à jour avec succès`); //return pour arrêter la fonction
     }
 
-    //sinon par défaut = cas création [méthode guard clauses en mettant des return dans les if afin d'éviter les else]
+    //sinon par défaut = cas création 
     articleJSON.uid = uuidv4();
     articleObject = await Article.create(articleJSON); //si articleJSON avait d'autres attributs ils ne seraient pas ajoutés en bdd grâce au model Article -> heureusement
     return response.json(`L'article id=${articleObject.uid} a été créé avec succès`);
